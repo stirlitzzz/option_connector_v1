@@ -1,5 +1,4 @@
 from fastapi import FastAPI
-from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import Optional, Literal, List, Dict, Any
 import numpy as np
@@ -114,13 +113,13 @@ def fetch(id: str) -> dict:
     Fetch the item by ID. If the ID is 'help:option_grid', return usage instructions.
     If the ID encodes params (produced by `search`), compute and return the grid.
     """
-    if id == "help:option_grid":
+    if id == "help:option_grid_mcp":
         return {
             "title": "OptionGrid MCP usage",
             "how_to": "Call `search` with a JSON payload (see example in docstring). "
                       "Then call `fetch(id)` with the returned id to get the result."
         }
-    if id.startswith("option_grid:"):
+    if id.startswith("option_grid_mcp:"):
         params = _decode(id.split(":", 1)[1])
         return option_grid_mcp(**params)
     raise ValueError(f"Unknown id: {id}")
