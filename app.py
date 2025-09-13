@@ -522,6 +522,18 @@ def option_grid(req: OptionGridReq):
     """
     return resp
 
+# ---------- API models ----------
+class OptionStrategyPriceReq(BaseModel):
+    spot: float
+    strikes: List[float]
+    cp: List[str]           # 'call'/'put' or 'c'/'p'
+    sigma: List[float]
+    qty: List[float]
+    ttm: List[float]              # years, grid goes ttm -> 0
+    r: float
+    q: float = 0.0
+    contract_size: int = 100
+
 
 @mcp.tool()
 def option_strategy_price_mcp(
@@ -546,17 +558,7 @@ def option_strategy_price_mcp(
 
 
 
-# ---------- API models ----------
-class OptionStrategyPriceReq(BaseModel):
-    spot: float
-    strikes: List[float]
-    cp: List[str]           # 'call'/'put' or 'c'/'p'
-    sigma: List[float]
-    qty: List[float]
-    ttm: List[float]              # years, grid goes ttm -> 0
-    r: float
-    q: float = 0.0
-    contract_size: int = 100
+
 
 
 
