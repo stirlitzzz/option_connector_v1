@@ -556,7 +556,7 @@ class OptionStrategyPriceReq(BaseModel):
 
 
 
-@app.post("/option_strategy_grid", response_model=dict)
+@app.post("/option_strategy_price", response_model=dict)
 def option_strategy_price(req: OptionStrategyPriceReq):
     # 1) grids
     Sg=np.array(req.spot)*np.ones(len(req.strikes))
