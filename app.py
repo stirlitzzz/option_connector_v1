@@ -36,6 +36,7 @@ mcp = FastMCP(
         "Compute Black–Scholes–Merton option price/greeks grids. "
         "Use `search` by passing JSON parameters in the query; it returns an ID. "
         "Then call `fetch(id)` to retrieve the computed grid."
+        "Use `option_strategy_price_mcp` to compute option price/greeks for an option strategy, given a spot, strikes, cp, sigma, qty, ttm, r, q, contract_size"
     ),
     streamable_http_path="/"  # so the server mounts exactly at /mcp
 )  # defaults to streamable HTTP; better for ChatGPT over the web
@@ -122,6 +123,9 @@ def fetch(id: str) -> dict:
     if id.startswith("option_grid_mcp:"):
         params = _decode(id.split(":", 1)[1])
         return option_grid_mcp(**params)
+    if id.startswith("option_strategy_price_mcp:"):
+        params = _decode(id.split(":", 1)[1])
+        return option_strategy_price_mcp(**params)
     raise ValueError(f"Unknown id: {id}")
 
 # Mount the MCP server under /mcp (HTTP transport)
