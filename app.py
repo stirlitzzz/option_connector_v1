@@ -28,18 +28,24 @@ def home(): return {"hello hello": "deltadisco.party"}
 
 
 
-
-# Create the MCP server
 mcp = FastMCP(
     name="OptionGrid",
     instructions=(
-        "Compute Black–Scholes–Merton option price/greeks grids. "
-        "Use `search` by passing JSON parameters in the query; it returns an ID. "
-        "Then call `fetch(id)` to retrieve the computed grid."
-        "Use `option_strategy_price_mcp` to compute option price/greeks for an option strategy, given a spot, strikes, cp, sigma, qty, ttm, r, q, contract_size"
+        "You expose TWO compute tools:\n"
+        "1) `option_grid_mcp` — use when you need a grid of values over spot/time; "
+        "   requires numeric fields: spot, strikes, cp, sigma, qty, ttm, r, q "
+        "(plus optional grid args n_spots, n_texp, spot_lo, spot_hi, axes_mode).\n"
+        "2) `option_strategy_price_mcp` — use to price an explicit option strategy "
+        "(e.g., straddle/strangle/collar/spreads) given per-leg strikes/cp/sigma/qty "
+        "and a SINGLE maturity ttm, r, q.\n\n"
+        "Prefer calling these tools directly when you have numeric fields. "
+        "Alternatively, call `search` with structured args or natural language to get an ID, "
+        "then `fetch(id)`.\n"
+        "Rules: `cp` must be 'call' or 'put'; ttm is years (e.g., 0.25=3m, 1.0=1y). "
+        "Return the tool JSON as-is."
     ),
-    streamable_http_path="/"  # so the server mounts exactly at /mcp
-)  # defaults to streamable HTTP; better for ChatGPT over the web
+    streamable_http_path="/"
+)
 
 
 # Initialize FastAPI with a lifespan that starts FastMCP's session manager
@@ -110,22 +116,56 @@ def _decode(s: str) -> dict:
 @mcp.tool()
 def fetch(id: str) -> dict:
     """
-    REQUIRED by ChatGPT Deep Research.
-    Fetch the item by ID. If the ID is 'help:option_grid', return usage instructions.
-    If the ID encodes params (produced by `search`), compute and return the grid.
+    REQUIRED by Deep Research-style flows.
+    Fetch a previously prepared computation by ID.
+
+    Special help IDs:
+    - 'help:option_grid_mcp'            → usage + example for grid
+    - 'help:option_strategy_price_mcp'  → usage + example for strategy pricing
     """
     if id == "help:option_grid_mcp":
         return {
-            "title": "OptionGrid MCP usage",
-            "how_to": "Call `search` with a JSON payload (see example in docstring). "
-                      "Then call `fetch(id)` with the returned id to get the result."
+            "title": "OptionGrid usage",
+            "how_to": (
+                "Call `option_grid_mcp` directly when you have numeric fields "
+                "(spot, strikes, cp, sigma, qty, ttm, r, q). "
+                "Or call `search(tool=\"grid\", ...)` and then `fetch(id)`."
+            ),
+            "example_direct_call": {
+                "name": "option_grid_mcp",
+                "arguments": {
+                    "spot": 100, "strikes": [95,105], "cp": ["put","call"],
+                    "sigma": [0.2,0.18], "qty": [-1,1], "ttm": 0.25, "r": 0.03, "q": 0.0
+                }
+            }
         }
+
+    if id == "help:option_strategy_price_mcp":
+        return {
+            "title": "Option Strategy Price usage",
+            "how_to": (
+                "Use `option_strategy_price_mcp` to price explicit legs "
+                "(straddle, strangle, collar, spreads). "
+                "Provide spot, per-leg strikes/cp/sigma/qty, single ttm, r, q. "
+                "Or call `search(tool=\"strategy\", ...)` and then `fetch(id)`."
+            ),
+            "example_direct_call": {
+                "name": "option_strategy_price_mcp",
+                "arguments": {
+                    "spot": 100, "strikes": [95,105], "cp": ["put","call"],
+                    "sigma": [0.22,0.18], "qty": [-1,1], "ttm": 1.0, "r": 0.03, "q": 0.0
+                }
+            }
+        }
+
     if id.startswith("option_grid_mcp:"):
         params = _decode(id.split(":", 1)[1])
         return option_grid_mcp(**params)
+
     if id.startswith("option_strategy_price_mcp:"):
         params = _decode(id.split(":", 1)[1])
         return option_strategy_price_mcp(**params)
+
     raise ValueError(f"Unknown id: {id}")
 
 # Mount the MCP server under /mcp (HTTP transport)
@@ -633,54 +673,120 @@ def option_strategy_price(req: OptionStrategyPriceReq):
 
 
 
-
+from typing import Optional, Literal
 
 @mcp.tool()
-def search(query: str) -> dict:
-    # 1) Try strict JSON first
-    try:
-        j = query[query.index("{"): query.rindex("}")+1]
-        params = json.loads(j)
-        return {"ids": [f"option_grid:{_encode(params)}"]}
-    except Exception:
-        pass
+def search(
+    query: Optional[str] = None,
+    # structured fields (preferred)
+    tool: Optional[Literal["grid","strategy"]] = None,
+    spot: Optional[float] = None,
+    strikes: Optional[List[float]] = None,
+    cp: Optional[List[str]] = None,        # 'call'/'put' or 'c'/'p'
+    sigma: Optional[List[float]] = None,
+    qty: Optional[List[float]] = None,
+    ttm: Optional[float] = None,
+    r: Optional[float] = None,
+    q: Optional[float] = None,
+    # grid-only extras (kept for compatibility)
+    n_spots: int = 21,
+    n_texp: int = 11,
+    spot_lo: float = 0.5,
+    spot_hi: float = 1.5,
+    contract_size: int = 100,
+    axes_mode: Optional[str] = None,
+    include_per_option: bool = False,
+) -> dict:
+    """
+    Search helper that returns an ID for `fetch(id)`. Two modes:
 
-    # 2) NL -> params (very simple heuristics; improve as needed)
-    import re
-    def find(rx, default=None, cast=float):
-        m = re.search(rx, query, re.I)
-        return cast(m.group(1)) if m else default
+    1) Structured: pass numeric fields directly. Set `tool="grid"` or `tool="strategy"`.
+       If `tool` is omitted, we prefer 'strategy' when ttm is a single float and legs look explicit.
+    2) Natural language (query): we parse common tokens and default to 'strategy'.
 
-    spot = find(r"\bspot\s*[:=]?\s*([0-9.]+)", default=100.0)
-    ttm  = find(r"\b(ttm|tenor|t)\s*[:=]?\s*([0-9.]+)", default=0.25)
-    r    = find(r"\br\s*[:=]?\s*([0-9.]+)", default=0.05)
-    q    = find(r"\bq\s*[:=]?\s*([0-9.]+)", default=0.00)
+    Returns: {"ids": ["<tool_name>:<base64-json>"]} where tool_name ∈
+             {"option_grid_mcp", "option_strategy_price_mcp"}.
+    """
+    def norm_cp(xs: List[str]) -> List[str]:
+        return [("call" if x.lower().startswith("c") else "put") for x in xs]
 
-    # Lists like: strikes 100,105   sigma 0.2,0.18   cp put,call   qty -1,1
-    def list_of(rx, default):
-        m = re.search(rx, query, re.I)
-        if not m: return default
-        return [x.strip() for x in re.split(r"[ ,]+", m.group(1).strip()) if x.strip()]
+    # ---------- Structured path ----------
+    have_struct = all(v is not None for v in (spot, strikes, cp, sigma, qty, ttm, r, q))
+    if have_struct:
+        params = {
+            "spot": float(spot),
+            "strikes": [float(x) for x in strikes],   # per-leg
+            "cp": norm_cp(cp),
+            "sigma": [float(x) for x in sigma],
+            "qty": [float(x) for x in qty],
+            "ttm": float(ttm),
+            "r": float(r),
+            "q": float(q),
+            "contract_size": int(contract_size),
+        }
 
-    strikes = [float(x) for x in list_of(r"\bstrikes?\s*([0-9., ]+)", [str(spot)])]
-    sigma   = [float(x) for x in list_of(r"\bsigma\s*([0-9., ]+)", ["0.2"])]
-    cp      = [x.lower()[0] for x in list_of(r"\bcp|calls?/?puts?\s*([a-z ,]+)", ["c"])]
-    qty     = [float(x) for x in list_of(r"\bqty\s*([0-9., -]+)", ["1"])]
+        # Choose tool
+        chosen = tool
+        if chosen is None:
+            # Heuristic: if caller provided grid-ish fields, assume grid; else strategy
+            gridish = axes_mode is not None or n_spots != 21 or n_texp != 11 or spot_lo != 0.5 or spot_hi != 1.5 or include_per_option
+            chosen = "grid" if gridish else "strategy"
 
-    # Pad/trim lists to same length
-    k = max(len(strikes), len(sigma), len(cp), len(qty))
-    def fit(xs, fill):
-        xs = xs[:k] + [fill] * max(0, k - len(xs))
-        return xs
-    strikes = fit(strikes, spot)
-    sigma   = fit(sigma,   0.2)
-    cp      = fit(cp,      "c")
-    qty     = fit(qty,     1.0)
+        if chosen == "grid":
+            params.update(dict(
+                n_spots=int(n_spots), n_texp=int(n_texp),
+                spot_lo=float(spot_lo), spot_hi=float(spot_hi),
+                axes_mode=axes_mode, include_per_option=bool(include_per_option)
+            ))
+            return {"ids": [f"option_grid_mcp:{_encode(params)}"]}
 
-    params = {
-        "spot": spot, "strikes": strikes, "cp": ["call" if x=="c" else "put" for x in cp],
-        "sigma": sigma, "qty": qty, "ttm": ttm, "r": r, "q": q,
-        "n_spots": 21, "n_texp": 11, "spot_lo": 0.5, "spot_hi": 1.5,
-        "contract_size": 1, "axes_mode": None, "include_per_option": False
-    }
-    return {"ids": [f"option_grid:{_encode(params)}"]}
+        # strategy
+        return {"ids": [f"option_strategy_price_mcp:{_encode(params)}"]}
+
+    # ---------- NL fallback ----------
+    if query:
+        import re
+        def find(rx, default=None, cast=float):
+            m = re.search(rx, query, re.I)
+            return cast(m.group(1)) if m else default
+
+        s = find(r"\bspot\s*[:=]?\s*([0-9.]+)", 100.0)
+        t = find(r"\b(ttm|tenor|t)\s*[:=]?\s*([0-9.]+)", 0.25)
+        rr = find(r"\br\s*[:=]?\s*([0-9.]+)", 0.03)
+        qq = find(r"\bq\s*[:=]?\s*([0-9.]+)", 0.00)
+
+        def list_of(rx, default):
+            m = re.search(rx, query, re.I)
+            if not m: return default
+            return [x.strip() for x in re.split(r"[ ,]+", m.group(1).strip()) if x.strip()]
+
+        k_strikes = [float(x) for x in list_of(r"\bstrikes?\s*([0-9., ]+)", [str(s)])]
+        k_sigma   = [float(x) for x in list_of(r"\bsigma\s*([0-9., ]+)", ["0.2"])]
+        k_cp      = [x.lower()[0] for x in list_of(r"\bcp|calls?/?puts?\s*([a-z ,]+)", ["c"])]
+        k_qty     = [float(x) for x in list_of(r"\bqty\s*([0-9., -]+)", ["1"])]
+
+        L = max(len(k_strikes), len(k_sigma), len(k_cp), len(k_qty))
+        def fit(xs, fill): return (xs[:L] + [fill] * max(0, L - len(xs)))
+        k_strikes = fit(k_strikes, s)
+        k_sigma   = fit(k_sigma,   0.2)
+        k_cp      = fit(k_cp,      "c")
+        k_qty     = fit(k_qty,     1.0)
+
+        params = {
+            "spot": s, "strikes": k_strikes, "cp": norm_cp(k_cp),
+            "sigma": k_sigma, "qty": k_qty, "ttm": t, "r": rr, "q": qq,
+            "contract_size": contract_size
+        }
+
+        # NL: default to strategy unless the user says "grid"
+        if re.search(r"\bgrid\b", query, re.I):
+            params.update(dict(
+                n_spots=n_spots, n_texp=n_texp, spot_lo=spot_lo, spot_hi=spot_hi,
+                axes_mode=axes_mode, include_per_option=include_per_option
+            ))
+            return {"ids": [f"option_grid_mcp:{_encode(params)}"]}
+
+        return {"ids": [f"option_strategy_price_mcp:{_encode(params)}"]}
+
+    # ---------- no usable input ----------
+    return {"ids": ["help:option_strategy_price_mcp"]}
