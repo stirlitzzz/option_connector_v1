@@ -548,7 +548,46 @@ def option_strategy_price_mcp(
     contract_size: int = 100
 ) -> dict:
     """
-    Compute option price/greeks for an option strategy, given a spot, strikes, cp, sigma, qty, ttm, r, q, contract_size
+    Use this when the user wants to **price an option strategy** (straddles, strangles, collars, spreads, etc.)
+    given explicit option legs. Do NOT use this to compute full grids of values (use `option_grid_mcp` for that).
+
+    **Arguments**
+    - `spot` (float): Current underlying spot price.
+    - `strikes` (list[float]): Strike price(s) of each leg.
+    - `cp` (list[str]): Option type(s) for each leg. Must be `"call"` or `"put"` (or `"c"`/`"p"`).
+    - `sigma` (list[float]): Volatility for each leg (annualized, e.g. 0.20 for 20%).
+    - `qty` (list[float]): Quantity for each leg. Positive = long, negative = short.
+    - `ttm` (float): Time to maturity in years (e.g. 0.25 = 3 months, 1.0 = 1 year).
+    - `r` (float): Risk-free interest rate (annualized).
+    - `q` (float, optional): Continuous dividend yield. Default = 0.0.
+    - `contract_size` (int, optional): Number of underlying units per contract. Default = 100.
+
+    **Behavior**
+    - Each leg is priced via Black–Scholes–Merton given its strike, type, vol, maturity, and rate inputs.
+    - Scales prices and Greeks by quantity and contract size.
+    - Aggregates to produce both per-option and portfolio-level outputs.
+
+    **Returns**
+    A JSON dict with:
+    - `meta`: Echo of inputs (spot, strikes, cp, sigma, qty, r, q, ttm, contract_size).
+    - `per_opt_scaled`: Scaled price/Greeks for each individual option leg.
+    - `portfolio_scaled`: Combined portfolio totals (sum over all legs).
+    - `Sg`: List of spot values used internally (usually constant array of `spot`).
+    - `Tg`: List with the maturity value(s).
+
+    **Example Call**
+    ```
+    {
+      "spot": 100,
+      "strikes": [95, 105],
+      "cp": ["put", "call"],
+      "sigma": [0.22, 0.18],
+      "qty": [-1, 1],
+      "ttm": 1.0,
+      "r": 0.03,
+      "q": 0.0
+    }
+    ```
     """
     req = OptionStrategyPriceReq(
         spot=spot, strikes=strikes, cp=cp, sigma=sigma, qty=qty,
