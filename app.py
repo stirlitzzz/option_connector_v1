@@ -31,6 +31,7 @@ def home(): return {"hello hello": "deltadisco.party"}
 mcp = FastMCP(
     name="OptionGrid",
     instructions=(
+        "all tools are READ-ONLY / PURE COMPUTATION. No side effects.\n"
         "You expose TWO compute tools:\n"
         "1) `option_grid_mcp` — use when you need a grid of values over spot/time; "
         "   requires numeric fields: spot, strikes, cp, sigma, qty, ttm, r, q "
@@ -93,6 +94,7 @@ def option_grid_mcp(
     include_per_option: bool = False,
 ) -> dict:
     """
+    READ-ONLY / PURE COMPUTATION. No side effects.
     Compute option price/greeks surfaces over a spot×time grid.
     Returns both raw and desk-style scaled portfolio surfaces.
     """
@@ -588,6 +590,7 @@ def option_strategy_price_mcp(
     contract_size: int = 100
 ) -> dict:
     """
+    READ-ONLY / PURE COMPUTATION. No side effects.
     Use this when the user wants to **price an option strategy** (straddles, strangles, collars, spreads, etc.)
     given explicit option legs. Do NOT use this to compute full grids of values (use `option_grid_mcp` for that).
 
