@@ -153,7 +153,7 @@ def fetch(id: str) -> dict:
                 "name": "option_strategy_price_mcp",
                 "arguments": {
                     "spot": 100, "strikes": [95,105], "cp": ["put","call"],
-                    "sigma": [0.22,0.18], "qty": [-1,1], "ttm": 1.0, "r": 0.03, "q": 0.0
+                    "sigma": [0.22,0.18], "qty": [-1,1], "ttm": [1.0, 1.0],"r": 0.03, "q": 0.0
                 }
             }
         }
