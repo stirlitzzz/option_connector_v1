@@ -664,9 +664,9 @@ def option_strategy_price(req: OptionStrategyPriceReq):
             "contract_size": req.contract_size
         },
         "per_opt_scaled": _tolist_dict(per_opt_scaled),          
-        "portfolio_scaled": _tolist_dict(portfolio_scaled),    
-        "Tg": Tg.tolist(),
-        "Sg": Sg.tolist()
+        "portfolio_scaled": _tolist_dict(portfolio_scaled)   
+        #"Tg": Tg.tolist(),
+        #"Sg": Sg.tolist()
     }
     return resp
 
