@@ -14,6 +14,8 @@ logging.basicConfig(level=logging.INFO)
 logging.getLogger("mcp").setLevel(logging.DEBUG)
 import csv, time
 from fastapi.staticfiles import StaticFiles
+from pathlib import Path
+
 import os
 BASE_DIR = Path(__file__).resolve().parent
 EXPORT_DIR = BASE_DIR / "exports"
@@ -32,7 +34,7 @@ def health(): return {"ok": True}
 @app.get("/")
 def home(): return {"hello hello": "deltadisco.party"}
 
-@app.get("/debug/files")
+@app.get("/debug/files", include_in_schema=True)
 def debug_files():
     files = sorted(p.name for p in EXPORT_DIR.glob("*"))
     return {"export_dir": str(EXPORT_DIR), "exists": EXPORT_DIR.exists(), "files": files}
@@ -70,7 +72,7 @@ async def lifespan(app):
     async with mcp.session_manager.run():
         yield
 mcp_app = mcp.streamable_http_app()
-app = FastAPI(lifespan=lifespan)
+
 @app.get("/", include_in_schema=False)
 def home():
     return {
@@ -856,17 +858,19 @@ def export_option_grid_csv_mcp(
     # 3) write tidy CSV
     ts = int(time.time())
     fn = f"exports/grid_{field}_{ts}.csv"
+
+    fn = EXPORT_DIR / f"grid_price_{int(time.time())}.csv"
     with open(fn, "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["S","T","value"])
+        w = csv.writer(f); w.writerow(["S","T","value"]);  # ...write rows...
         # iterate cell-wise; shapes should match (m,n)
         m, n = V.shape
         for i in range(m):
             for j in range(n):
                 w.writerow([float(Sg[i,j]), float(Tg[i,j]), float(V[i,j])])
+        download_url = f"https://deltadisco.party/files/{fn.name}"  # or http://127.0.0.1:8000 during local tests
 
     return {
         "field": field,
         "rows": int(V.size),
-        "download_url": f"https://deltadisco.party/files/{os.path.basename(fn)}"
+        "download_url" : download_url   # or http://127.0.0.1:8000 during local tests
     }
