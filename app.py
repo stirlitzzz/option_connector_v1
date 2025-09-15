@@ -12,9 +12,14 @@ from fastapi.responses import RedirectResponse
 import logging
 logging.basicConfig(level=logging.INFO)
 logging.getLogger("mcp").setLevel(logging.DEBUG)
-
+import csv, time
+from fastapi.staticfiles import StaticFiles
+import os
 
 app = FastAPI()
+
+os.makedirs("exports", exist_ok=True)
+app.mount("/files", StaticFiles(directory="exports"), name="files")
 
 @app.get("/health")
 def health(): return {"ok": True}
@@ -793,3 +798,68 @@ def search(
 
     # ---------- no usable input ----------
     return {"ids": ["help:option_strategy_price_mcp"]}
+
+@mcp.tool()
+def export_option_grid_csv_mcp(
+    # same inputs your grid tool expects:
+    spot: float,
+    strikes: List[float],
+    cp: List[str],            # 'call'/'put' or 'c'/'p'
+    sigma: List[float],
+    qty: List[float],
+    ttm: float,
+    r: float,
+    q: float = 0.0,
+    n_spots: int = 41,
+    n_texp: int = 21,
+    spot_lo: float = 0.5,
+    spot_hi: float = 1.5,
+    contract_size: int = 100,
+    axes_mode: Optional[str] = None,
+    include_per_option: bool = False,
+    # which portfolio field to export:
+    field: str = "price"      # e.g. "price","delta_shares","theta_per_day","vega_per_volpt"
+) -> dict:
+    """
+    READ-ONLY. Compute the grid, then export a tidy CSV for a chosen portfolio field.
+    CSV schema: S,T,value  (one row per grid cell)
+    Returns: {"field","rows","download_url"}  OR {"error","available"} if field missing.
+    """
+    # 1) build the request and compute grid JSON
+    req = OptionGridReq(
+        spot=spot, strikes=strikes, cp=cp, sigma=sigma, qty=qty,
+        ttm=ttm, r=r, q=q, n_spots=n_spots, n_texp=n_texp,
+        spot_lo=spot_lo, spot_hi=spot_hi, contract_size=contract_size,
+        axes_mode=axes_mode, include_per_option=include_per_option
+    )
+    result = option_grid(req)
+
+    # 2) pull axes + target field
+    axes = result["axes"]
+    Sg = np.array(axes["S"])     # shape (m,n)
+    Tg = np.array(axes["T"])     # shape (m,n)
+    port = result["portfolio_scaled"]
+
+    if field not in port:
+        return {"error": f"field '{field}' not in portfolio_scaled",
+                "available": list(port.keys())}
+
+    V = np.array(port[field])    # shape (m,n)
+
+    # 3) write tidy CSV
+    ts = int(time.time())
+    fn = f"exports/grid_{field}_{ts}.csv"
+    with open(fn, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["S","T","value"])
+        # iterate cell-wise; shapes should match (m,n)
+        m, n = V.shape
+        for i in range(m):
+            for j in range(n):
+                w.writerow([float(Sg[i,j]), float(Tg[i,j]), float(V[i,j])])
+
+    return {
+        "field": field,
+        "rows": int(V.size),
+        "download_url": f"https://deltadisco.party/files/{os.path.basename(fn)}"
+    }
