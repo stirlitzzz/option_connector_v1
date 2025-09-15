@@ -15,12 +15,16 @@ logging.getLogger("mcp").setLevel(logging.DEBUG)
 import csv, time
 from fastapi.staticfiles import StaticFiles
 import os
+BASE_DIR = Path(__file__).resolve().parent
+EXPORT_DIR = BASE_DIR / "exports"
+EXPORT_DIR.mkdir(exist_ok=True)          # ensure exists before mount
 
+# serve: https://<host>/files/<filename>
 app = FastAPI()
 
 os.makedirs("exports", exist_ok=True)
-app.mount("/files", StaticFiles(directory="exports"), name="files")
 
+app.mount("/files", StaticFiles(directory=str(EXPORT_DIR)), name="files")
 @app.get("/health")
 def health(): return {"ok": True}
 
@@ -28,7 +32,10 @@ def health(): return {"ok": True}
 @app.get("/")
 def home(): return {"hello hello": "deltadisco.party"}
 
-
+@app.get("/debug/files")
+def debug_files():
+    files = sorted(p.name for p in EXPORT_DIR.glob("*"))
+    return {"export_dir": str(EXPORT_DIR), "exists": EXPORT_DIR.exists(), "files": files}
 
 
 
