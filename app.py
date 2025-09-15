@@ -1,7 +1,9 @@
+from tkinter import W
 from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import Optional, Literal, List, Dict, Any
 import numpy as np
+import pandas as pd
 
 
 # --- MCP glue ---------------------------------------------------------------
@@ -17,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
 import os
+import re
 BASE_DIR = Path(__file__).resolve().parent
 EXPORT_DIR = BASE_DIR / "exports"
 EXPORT_DIR.mkdir(exist_ok=True)          # ensure exists before mount
@@ -452,6 +455,7 @@ def bsm(Sg, strikes, cp, Tg, r, q, sigma, jump_pct=None):
     return out
 
 def scale_axes(Sg, Tg, spot0, mode='pct', days_per_year=252):
+    print(f"mode: {mode}")
     if mode == 'pct':
         Xg = Sg / spot0 - 1.0
     elif mode == 'logm':
@@ -532,7 +536,7 @@ class OptionGridReq(BaseModel):
     spot_lo: float = 0.5
     spot_hi: float = 1.5
     contract_size: int = 100
-    axes_mode: Optional[Literal['pct','logm']] = None
+    axes_mode: Optional[Literal['pct','logm']] = 'pct'
     include_per_option: bool = False
 
 # ---------- endpoint ----------
@@ -808,12 +812,88 @@ def search(
     # ---------- no usable input ----------
     return {"ids": ["help:option_strategy_price_mcp"]}
 
+
+from pydantic import Field
+from fastapi import HTTPException
+
+
+class ExportGridReq(BaseModel):
+    spot: float
+    strikes: List[float]
+    cp: List[str]                       # 'call'/'put' or 'c'/'p'
+    sigma: List[float]
+    qty: List[float]
+    ttm: float                          # years
+    r: float
+    q: float = 0.0
+    n_spots: int = 41
+    n_texp: int = 21
+    spot_lo: float = 0.5
+    spot_hi: float = 1.5
+    contract_size: int = 100
+    axes_mode: Optional[str] = 'pct'
+    include_per_option: bool = False
+    field: str = Field(default="price", description="portfolio field to export")
+    
+
+@app.post("/export_option_grid_csv", include_in_schema=True)
+def export_option_grid_csv(req: ExportGridReq):
+    # Build and compute the grid using your existing code
+    og_req = OptionGridReq(
+        spot=req.spot, strikes=req.strikes, cp=req.cp, sigma=req.sigma, qty=req.qty,
+        ttm=req.ttm, r=req.r, q=req.q, n_spots=req.n_spots, n_texp=req.n_texp,
+        spot_lo=req.spot_lo, spot_hi=req.spot_hi, contract_size=req.contract_size,
+        axes_mode=req.axes_mode, include_per_option=req.include_per_option
+    )
+    result = option_grid(og_req)  # <- your existing handler returns JSON
+
+    # Pull axes + the chosen portfolio field
+    axes = result["axes"]
+    Sg = np.array(axes["S"])      # (m,n)
+    Tg = np.array(axes["T"])      # (m,n)
+    port = result["portfolio_scaled"]
+
+    field = req.field
+    if field not in port:
+        raise HTTPException(status_code=400, detail={
+            "error": f"field '{field}' not in portfolio_scaled",
+            "available": list(port.keys())
+        })
+
+    V = np.array(port[field])     # (m,n)
+    #V = pd.pivot_table(pd.DataFrame(V), index=Tg, columns=Sg, values=field)
+    V_df = pd.DataFrame(V, index=Tg[:,0], columns=Sg[0,:])
+
+    # Write tidy CSV: S,T,value (one row per grid cell)
+    import csv, time
+    ts = int(time.time())
+    fn = EXPORT_DIR / f"grid_{field}_{ts}.csv"
+    V_df.to_csv(fn)
+    #with open(fn, "w", newline="") as f:
+    #    w = csv.writer(f)
+        #w.writerow(["S","T","value"])
+    #    w.writerow(V.columns)
+    #    m, n = V.shape
+    #    for i in range(m):
+    #        for j in range(n):
+    #            w.writerow([float(Sg[i, j]), float(Tg[i, j]), float(V[i, j])])
+    print(f"wrote to {fn}")
+
+    return {
+        "field": field,
+        "rows": int(V.size),
+        # swap domain accordingly for local vs public testing
+        #"download_url": f"https://deltadisco.party/files/{fn.name}"
+        # For local test use: 
+        "download_url": f"http://127.0.0.1:8000/files/{fn.name}"
+    }
+
+
 @mcp.tool()
 def export_option_grid_csv_mcp(
-    # same inputs your grid tool expects:
     spot: float,
     strikes: List[float],
-    cp: List[str],            # 'call'/'put' or 'c'/'p'
+    cp: List[str],                 # 'call'/'put' or 'c'/'p'
     sigma: List[float],
     qty: List[float],
     ttm: float,
@@ -826,51 +906,123 @@ def export_option_grid_csv_mcp(
     contract_size: int = 100,
     axes_mode: Optional[str] = None,
     include_per_option: bool = False,
-    # which portfolio field to export:
-    field: str = "price"      # e.g. "price","delta_shares","theta_per_day","vega_per_volpt"
+    field: str = "price"           # e.g. "price","delta_shares","theta_per_day","vega_per_volpt"
 ) -> dict:
     """
-    READ-ONLY. Compute the grid, then export a tidy CSV for a chosen portfolio field.
-    CSV schema: S,T,value  (one row per grid cell)
-    Returns: {"field","rows","download_url"}  OR {"error","available"} if field missing.
+    Thin wrapper: validate with ExportGridReq and delegate to the FastAPI handler
+    so the logic lives in one place (export_option_grid_csv).
     """
-    # 1) build the request and compute grid JSON
-    req = OptionGridReq(
-        spot=spot, strikes=strikes, cp=cp, sigma=sigma, qty=qty,
-        ttm=ttm, r=r, q=q, n_spots=n_spots, n_texp=n_texp,
-        spot_lo=spot_lo, spot_hi=spot_hi, contract_size=contract_size,
-        axes_mode=axes_mode, include_per_option=include_per_option
-    )
-    result = option_grid(req)
+    # Normalize to match the API’s default unless caller overrides
+    axes_mode = axes_mode if axes_mode is not None else "pct"
 
-    # 2) pull axes + target field
+    try:
+        req = ExportGridReq(
+            spot=spot, strikes=strikes, cp=cp, sigma=sigma, qty=qty,
+            ttm=ttm, r=r, q=q, n_spots=n_spots, n_texp=n_texp,
+            spot_lo=spot_lo, spot_hi=spot_hi, contract_size=contract_size,
+            axes_mode=axes_mode, include_per_option=include_per_option,
+            field=field
+        )
+    except Exception as e:
+        return {"error": f"invalid arguments: {e}"}
+
+    try:
+        # Call the actual FastAPI route function (no HTTP hop needed)
+        return export_option_grid_csv(req)
+    except HTTPException as e:
+        # Mirror the API's error shape for consistency
+        detail = e.detail if isinstance(e.detail, dict) else {"error": str(e.detail)}
+        detail["status_code"] = getattr(e, "status_code", 400)
+        return detail
+    except Exception as e:
+        return {"error": str(e)}
+
+def _sanitize_sheet(name: str) -> str:
+    # Excel sheet names: max 31 chars, no []:*?/\
+    name = re.sub(r'[\[\]\:\*\?\/\\]', '_', str(name))
+    return (name or "sheet")[:31]
+
+@app.post("/export_option_grid_xlsx", include_in_schema=True)
+def export_option_grid_xlsx(req: ExportGridReq):
+    # Build and compute the grid using your existing code
+    og_req = OptionGridReq(
+        spot=req.spot, strikes=req.strikes, cp=req.cp, sigma=req.sigma, qty=req.qty,
+        ttm=req.ttm, r=req.r, q=req.q, n_spots=req.n_spots, n_texp=req.n_texp,
+        spot_lo=req.spot_lo, spot_hi=req.spot_hi, contract_size=req.contract_size,
+        axes_mode=req.axes_mode, include_per_option=req.include_per_option
+    )
+    result = option_grid(og_req)
+
+    # Axes + portfolio dict
     axes = result["axes"]
-    Sg = np.array(axes["S"])     # shape (m,n)
-    Tg = np.array(axes["T"])     # shape (m,n)
+    Sg = np.array(axes["S"])      # (m,n)
+    Tg = np.array(axes["T"])      # (m,n)
     port = result["portfolio_scaled"]
 
-    if field not in port:
-        return {"error": f"field '{field}' not in portfolio_scaled",
-                "available": list(port.keys())}
+    # Which fields to export?
+    export_all = str(req.field).lower() in ("*", "all")
+    if not export_all and req.field not in port:
+        raise HTTPException(status_code=400, detail={
+            "error": f"field '{req.field}' not in portfolio_scaled",
+            "available": list(port.keys())
+        })
+    fields = list(port.keys()) if export_all else [req.field]
 
-    V = np.array(port[field])    # shape (m,n)
-
-    # 3) write tidy CSV
+    # Build the workbook
     ts = int(time.time())
-    fn = f"exports/grid_{field}_{ts}.csv"
+    fn = EXPORT_DIR / f"grid_{'all' if export_all else fields[0]}_{ts}.xlsx"
 
-    fn = EXPORT_DIR / f"grid_price_{int(time.time())}.csv"
-    with open(fn, "w", newline="") as f:
-        w = csv.writer(f); w.writerow(["S","T","value"]);  # ...write rows...
-        # iterate cell-wise; shapes should match (m,n)
-        m, n = V.shape
-        for i in range(m):
-            for j in range(n):
-                w.writerow([float(Sg[i,j]), float(Tg[i,j]), float(V[i,j])])
-        download_url = f"https://deltadisco.party/files/{fn.name}"  # or http://127.0.0.1:8000 during local tests
+    def _write_workbook(writer):
+        sheets_written = []
+        total_cells = 0
+
+        # optional meta sheet (handy for auditors / future-you)
+        meta = pd.DataFrame([req.model_dump()])
+        meta.to_excel(writer, sheet_name="meta", index=False)
+
+        # also drop the S and T axes as separate tabs for clarity
+        pd.DataFrame({"S": Sg[0, :]}).to_excel(writer, sheet_name="axes_S", index=False)
+        pd.DataFrame({"T": Tg[:, 0]}).to_excel(writer, sheet_name="axes_T", index=False)
+
+        for field in fields:
+            V = np.array(port[field])  # (m,n)
+            if V.shape != Sg.shape:
+                # skip weird shapes (e.g., nested/per-option summaries)
+                continue
+
+            df = pd.DataFrame(V, index=Tg[:, 0], columns=Sg[0, :])
+            df.index.name = "T"
+            df.columns.name = "S"
+
+            sheet = _sanitize_sheet(field)
+            df.to_excel(writer, sheet_name=sheet)
+
+            # nice-to-haves: freeze header & set simple column widths
+            ws = writer.sheets[sheet]
+            ws.freeze_panes(1, 1)
+            ws.set_column(0, 0, 12)  # T
+            ws.set_column(1, df.shape[1], 12)  # S columns
+
+            sheets_written.append(sheet)
+            total_cells += int(V.size)
+
+        return sheets_written, total_cells
+
+    # prefer xlsxwriter if available; fall back to openpyxl
+    try:
+        with pd.ExcelWriter(fn, engine="xlsxwriter") as writer:
+            sheets_written, total_cells = _write_workbook(writer)
+    except ModuleNotFoundError:
+        with pd.ExcelWriter(fn, engine="openpyxl") as writer:
+            sheets_written, total_cells = _write_workbook(writer)
+
+    print(f"wrote workbook to {fn}")
 
     return {
-        "field": field,
-        "rows": int(V.size),
-        "download_url" : download_url   # or http://127.0.0.1:8000 during local tests
+        "fields": fields,
+        "sheets": sheets_written,
+        "rows": total_cells,
+        # swap domain accordingly for local vs public
+        # "download_url": f"https://deltadisco.party/files/{fn.name}"
+        "download_url": f"http://127.0.0.1:8000/files/{fn.name}"
     }
