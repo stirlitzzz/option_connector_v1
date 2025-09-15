@@ -889,53 +889,6 @@ def export_option_grid_csv(req: ExportGridReq):
     }
 
 
-@mcp.tool()
-def export_option_grid_csv_mcp(
-    spot: float,
-    strikes: List[float],
-    cp: List[str],                 # 'call'/'put' or 'c'/'p'
-    sigma: List[float],
-    qty: List[float],
-    ttm: float,
-    r: float,
-    q: float = 0.0,
-    n_spots: int = 41,
-    n_texp: int = 21,
-    spot_lo: float = 0.5,
-    spot_hi: float = 1.5,
-    contract_size: int = 100,
-    axes_mode: Optional[str] = None,
-    include_per_option: bool = False,
-    field: str = "price"           # e.g. "price","delta_shares","theta_per_day","vega_per_volpt"
-) -> dict:
-    """
-    Thin wrapper: validate with ExportGridReq and delegate to the FastAPI handler
-    so the logic lives in one place (export_option_grid_csv).
-    """
-    # Normalize to match the API’s default unless caller overrides
-    axes_mode = axes_mode if axes_mode is not None else "pct"
-
-    try:
-        req = ExportGridReq(
-            spot=spot, strikes=strikes, cp=cp, sigma=sigma, qty=qty,
-            ttm=ttm, r=r, q=q, n_spots=n_spots, n_texp=n_texp,
-            spot_lo=spot_lo, spot_hi=spot_hi, contract_size=contract_size,
-            axes_mode=axes_mode, include_per_option=include_per_option,
-            field=field
-        )
-    except Exception as e:
-        return {"error": f"invalid arguments: {e}"}
-
-    try:
-        # Call the actual FastAPI route function (no HTTP hop needed)
-        return export_option_grid_csv(req)
-    except HTTPException as e:
-        # Mirror the API's error shape for consistency
-        detail = e.detail if isinstance(e.detail, dict) else {"error": str(e.detail)}
-        detail["status_code"] = getattr(e, "status_code", 400)
-        return detail
-    except Exception as e:
-        return {"error": str(e)}
 
 def _sanitize_sheet(name: str) -> str:
     # Excel sheet names: max 31 chars, no []:*?/\
@@ -1026,3 +979,52 @@ def export_option_grid_xlsx(req: ExportGridReq):
         # "download_url": f"https://deltadisco.party/files/{fn.name}"
         "download_url": f"http://127.0.0.1:8000/files/{fn.name}"
     }
+
+
+@mcp.tool()
+def export_option_grid_csv_mcp(
+    spot: float,
+    strikes: List[float],
+    cp: List[str],                 # 'call'/'put' or 'c'/'p'
+    sigma: List[float],
+    qty: List[float],
+    ttm: float,
+    r: float,
+    q: float = 0.0,
+    n_spots: int = 41,
+    n_texp: int = 21,
+    spot_lo: float = 0.5,
+    spot_hi: float = 1.5,
+    contract_size: int = 100,
+    axes_mode: Optional[str] = None,
+    include_per_option: bool = False,
+    field: str = "price"           # e.g. "price","delta_shares","theta_per_day","vega_per_volpt"
+) -> dict:
+    """
+    Thin wrapper: validate with ExportGridReq and delegate to the FastAPI handler
+    so the logic lives in one place (export_option_grid_csv).
+    """
+    # Normalize to match the API’s default unless caller overrides
+    axes_mode = axes_mode if axes_mode is not None else "pct"
+
+    try:
+        req = ExportGridReq(
+            spot=spot, strikes=strikes, cp=cp, sigma=sigma, qty=qty,
+            ttm=ttm, r=r, q=q, n_spots=n_spots, n_texp=n_texp,
+            spot_lo=spot_lo, spot_hi=spot_hi, contract_size=contract_size,
+            axes_mode=axes_mode, include_per_option=include_per_option,
+            field=field
+        )
+    except Exception as e:
+        return {"error": f"invalid arguments: {e}"}
+
+    try:
+        # Call the actual FastAPI route function (no HTTP hop needed)
+        return export_option_grid_csv(req)
+    except HTTPException as e:
+        # Mirror the API's error shape for consistency
+        detail = e.detail if isinstance(e.detail, dict) else {"error": str(e.detail)}
+        detail["status_code"] = getattr(e, "status_code", 400)
+        return detail
+    except Exception as e:
+        return {"error": str(e)}
