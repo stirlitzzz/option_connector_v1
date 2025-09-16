@@ -225,8 +225,10 @@ def create_grid(spot_start, spot_end, t_start, t_end, n_spots, n_texp, indexing=
     Sg, Tg = np.meshgrid(S, T)#, indexing=indexing)   # shapes (n_spots, n_texp)
     return Sg, Tg
 
+
+"""
+
 def bsm_grid(Sg, strikes, cp, Tg, r, q, sigma):
-    """Return per-option raw surfaces (k,m,n) for price & greeks."""
     K   = np.asarray(strikes, float)[:, None, None]  # (k,1,1)
     sig = np.asarray(sigma,   float)[:, None, None]
     flg = _flags(cp)[:, None, None]                  # 'c'/'p' (k,1,1)
@@ -275,7 +277,7 @@ def bsm_grid(Sg, strikes, cp, Tg, r, q, sigma):
 
     return {"price":price, "delta":delta, "gamma":gamma, "vega":vega, "theta":theta, "rho":rho}
 
-
+"""
 
 
 
@@ -465,8 +467,9 @@ def scale_axes(Sg, Tg, spot0, mode='pct', days_per_year=252):
     Yg_days = Tg * days_per_year
     return Xg, Yg_days
 
+
+"""
 def scale_surfaces(per_opt_raw, qty, Sg, contract_size=100):
-    """Desk-style scaling by qty and local spot."""
     qty = np.asarray(qty, float)
     w = (contract_size * qty)[:, None, None]  # (k,1,1)
     scaled = {}
@@ -480,6 +483,7 @@ def scale_surfaces(per_opt_raw, qty, Sg, contract_size=100):
     scaled['rho_per_bp']     = per_opt_raw['rho']   * w / 10000.0
     portfolio = {k: v.sum(axis=0) for k, v in scaled.items()}  # (m,n)
     return scaled, portfolio
+"""
 
 def scale_surfaces(per_opt_raw, qty, Sg, contract_size=100):
     """Desk-style scaling by qty and local spot."""
@@ -980,7 +984,7 @@ def export_option_grid_xlsx(req: ExportGridReq):
         "download_url": f"http://127.0.0.1:8000/files/{fn.name}"
     }
 
-
+"""
 @mcp.tool()
 def export_option_grid_csv_mcp(
     spot: float,
@@ -1000,10 +1004,10 @@ def export_option_grid_csv_mcp(
     include_per_option: bool = False,
     field: str = "price"           # e.g. "price","delta_shares","theta_per_day","vega_per_volpt"
 ) -> dict:
-    """
+    #""
     Thin wrapper: validate with ExportGridReq and delegate to the FastAPI handler
     so the logic lives in one place (export_option_grid_csv).
-    """
+    #""
     # Normalize to match the API’s default unless caller overrides
     axes_mode = axes_mode if axes_mode is not None else "pct"
 
@@ -1028,3 +1032,4 @@ def export_option_grid_csv_mcp(
         return detail
     except Exception as e:
         return {"error": str(e)}
+"""
