@@ -887,9 +887,9 @@ def export_option_grid_csv(req: ExportGridReq):
         "field": field,
         "rows": int(V.size),
         # swap domain accordingly for local vs public testing
-        #"download_url": f"https://deltadisco.party/files/{fn.name}"
+        "download_url": f"https://deltadisco.party/files/{fn.name}"
         # For local test use: 
-        "download_url": f"http://127.0.0.1:8000/files/{fn.name}"
+        #"download_url": f"http://127.0.0.1:8000/files/{fn.name}"
     }
 
 
@@ -980,11 +980,10 @@ def export_option_grid_xlsx(req: ExportGridReq):
         "sheets": sheets_written,
         "rows": total_cells,
         # swap domain accordingly for local vs public
-        # "download_url": f"https://deltadisco.party/files/{fn.name}"
-        "download_url": f"http://127.0.0.1:8000/files/{fn.name}"
+        "download_url": f"https://deltadisco.party/files/{fn.name}"
+        #"download_url": f"http://127.0.0.1:8000/files/{fn.name}"
     }
 
-"""
 @mcp.tool()
 def export_option_grid_csv_mcp(
     spot: float,
@@ -1004,10 +1003,10 @@ def export_option_grid_csv_mcp(
     include_per_option: bool = False,
     field: str = "price"           # e.g. "price","delta_shares","theta_per_day","vega_per_volpt"
 ) -> dict:
-    #""
+    """
     Thin wrapper: validate with ExportGridReq and delegate to the FastAPI handler
     so the logic lives in one place (export_option_grid_csv).
-    #""
+    """
     # Normalize to match the API’s default unless caller overrides
     axes_mode = axes_mode if axes_mode is not None else "pct"
 
@@ -1024,7 +1023,7 @@ def export_option_grid_csv_mcp(
 
     try:
         # Call the actual FastAPI route function (no HTTP hop needed)
-        return export_option_grid_csv(req)
+        return export_option_grid_xlsx(req)
     except HTTPException as e:
         # Mirror the API's error shape for consistency
         detail = e.detail if isinstance(e.detail, dict) else {"error": str(e.detail)}
@@ -1032,4 +1031,3 @@ def export_option_grid_csv_mcp(
         return detail
     except Exception as e:
         return {"error": str(e)}
-"""
