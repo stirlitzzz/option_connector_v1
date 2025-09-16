@@ -76,19 +76,21 @@ async def lifespan(app):
         yield
 mcp_app = mcp.streamable_http_app()
 
+#@app.get("/", include_in_schema=False)
+#def home():
+#    return {
+#        "message": "Hi! Use POST /option_grid",
+#        "docs": "/docs",
+#        "openapi": "/openapi.json"
+#    }
+
+#@app.get("/mcp", include_in_schema=False)
+#def mcp_noslash():
+#    return RedirectResponse(url="/mcp/", status_code=308)  # 308 preserves method on POST
+
 @app.get("/", include_in_schema=False)
 def home():
-    return {
-        "message": "Hi! Use POST /option_grid",
-        "docs": "/docs",
-        "openapi": "/openapi.json"
-    }
-
-@app.get("/mcp", include_in_schema=False)
-def mcp_noslash():
-    return RedirectResponse(url="/mcp/", status_code=308)  # 308 preserves method on POST
-
-
+    return {"message": "Hi! Use POST /option_grid", "docs": "/docs", "openapi": "/openapi.json"}
 
 
 # The compute tool (typed just like your Pydantic request model)
@@ -190,12 +192,22 @@ def fetch(id: str) -> dict:
 # Mount the MCP server under /mcp (HTTP transport)
 # NOTE: Streamable HTTP default path is /mcp; since we set streamable_http_path="/",
 # the final URL is exactly /mcp
+#app.add_middleware(
+#    CORSMiddleware,
+#    allow_origins=["*"],  # tighten in prod
+#    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+#    allow_headers=["*"],
+#    expose_headers=["Mcp-Session-Id", "MCP-Session-Id"],  # case-insensitive, be generous
+#)
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # tighten in prod
-    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-    allow_headers=["*"],
-    expose_headers=["Mcp-Session-Id", "MCP-Session-Id"],  # case-insensitive, be generous
+    allow_origins=["https://chat.openai.com", "https://chatgpt.com"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["content-type", "mcp-protocol-version", "mcp-session-id"],
+    expose_headers=["mcp-session-id", "MCP-Session-Id"],
+    allow_credentials=False,
 )
 app.mount("/mcp", mcp_app)
 # ---------------------------------------------------------------------------
