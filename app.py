@@ -75,6 +75,7 @@ async def lifespan(app):
     async with mcp.session_manager.run():
         yield
 mcp_app = mcp.streamable_http_app()
+mcp_app.router.redirect_slashes = False
 
 #@app.get("/", include_in_schema=False)
 #def home():
@@ -88,9 +89,9 @@ mcp_app = mcp.streamable_http_app()
 #def mcp_noslash():
 #    return RedirectResponse(url="/mcp/", status_code=308)  # 308 preserves method on POST
 
-@app.get("/", include_in_schema=False)
-def home():
-    return {"message": "Hi! Use POST /option_grid", "docs": "/docs", "openapi": "/openapi.json"}
+#@app.get("/", include_in_schema=False)
+#def home():
+#    return {"message": "Hi! Use POST /option_grid", "docs": "/docs", "openapi": "/openapi.json"}
 
 
 # The compute tool (typed just like your Pydantic request model)
@@ -209,6 +210,7 @@ app.add_middleware(
     expose_headers=["mcp-session-id", "MCP-Session-Id"],
     allow_credentials=False,
 )
+
 app.mount("/mcp", mcp_app)
 # ---------------------------------------------------------------------------
 
