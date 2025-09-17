@@ -118,7 +118,63 @@ def bsm_grid(Sg, strikes, cp, Tg, r, q, sigma, jump_pct=None):
     return out
 
 
+def scale_axes(Sg, Tg, spot0, mode='pct', days_per_year=252):
+    print(f"mode: {mode}")
+    if mode == 'pct':
+        Xg = Sg / spot0 - 1.0
+    elif mode == 'logm':
+        Xg = np.log(Sg / spot0)
+    else:
+        raise ValueError("axes_mode must be 'pct' or 'logm'")
+    Yg_days = Tg * days_per_year
+    return Xg, Yg_days
 
+
+
+    """Desk-style scaling by qty and local spot."""
+    qty = np.asarray(qty, float)
+    w = (contract_size * qty)[:, None, None]  # (k,1,1)
+    scaled = {}
+    scaled['price'] = per_opt_raw['price'] * w
+    scaled['delta_shares']  = per_opt_raw['delta'] * w
+    scaled['delta_dollars'] = per_opt_raw['delta'] * w * Sg[None, ...]
+    scaled['gamma_shares']  = per_opt_raw['gamma'] * w
+    scaled['gamma_dollars_per_1pct'] = per_opt_raw['gamma'] * w * (Sg[None, ...]**2) * 0.01
+    scaled['vega_per_volpt'] = per_opt_raw['vega'] * w * 0.01
+    scaled['theta_per_day']  = per_opt_raw['theta'] * w / 365.0
+    scaled['rho_per_bp']     = per_opt_raw['rho']   * w / 10000.0
+    if 'jump_pnl' in per_opt_raw:
+        scaled['jump_pnl'] = per_opt_raw['jump_pnl'] * w
+    if 'jump_pnl_dn' in per_opt_raw:
+        scaled['jump_pnl_dn'] = per_opt_raw['jump_pnl_dn'] * w
+    portfolio = {k: v.sum(axis=0) for k, v in scaled.items()}  # (m,n)
+    return scaled, portfolio
+
+def scale_surfaces(per_opt_raw, qty, Sg, contract_size=100):
+    """Desk-style scaling by qty and local spot."""
+    qty = np.asarray(qty, float)
+    w = (contract_size * qty)[:, None, None]  # (k,1,1)
+    scaled = {}
+    scaled['price'] = per_opt_raw['price'] * w
+    scaled['delta_shares']  = per_opt_raw['delta'] * w
+    scaled['delta_dollars'] = per_opt_raw['delta'] * w * Sg[None, ...]
+    scaled['gamma_shares']  = per_opt_raw['gamma'] * w
+    scaled['gamma_dollars_per_1pct'] = per_opt_raw['gamma'] * w * (Sg[None, ...]**2) * 0.01
+    scaled['vega_per_volpt'] = per_opt_raw['vega'] * w * 0.01
+    scaled['theta_per_day']  = per_opt_raw['theta'] * w / 365.0
+    scaled['rho_per_bp']     = per_opt_raw['rho']   * w / 10000.0
+    if 'jump_pnl' in per_opt_raw:
+        scaled['jump_pnl'] = per_opt_raw['jump_pnl'] * w
+    if 'jump_pnl_dn' in per_opt_raw:
+        scaled['jump_pnl_dn'] = per_opt_raw['jump_pnl_dn'] * w
+    portfolio = {k: v.sum(axis=0) for k, v in scaled.items()}  # (m,n)
+    return scaled, portfolio
+    
+
+
+# ---------- endpoint ----------
+def _tolist_dict(d: Dict[str, Any]) -> Dict[str, Any]:
+    return {k: (v.tolist() if isinstance(v, np.ndarray) else v) for k, v in d.items()}
 
 class OptionGridReq(BaseModel):
     spot: float
@@ -129,13 +185,14 @@ class OptionGridReq(BaseModel):
     ttm: float              # years, grid goes ttm -> 0
     r: float
     q: float = 0.0
+    jump_pct: Optional[float] = None
     n_spots: int = 41
     n_texp: int = 21
     spot_lo: float = 0.5
     spot_hi: float = 1.5
     contract_size: int = 100
     axes_mode: Optional[Literal['pct','logm']] = 'pct'
-    include_per_option: bool = Falseo
+    include_per_option: bool = False
 
 
 
@@ -145,7 +202,7 @@ def option_grid(req: OptionGridReq):
                          req.ttm, 0.0, req.n_spots, req.n_texp, indexing='ij')
 
     # 2) per-option raw surfaces (k,m,n)
-    per_opt_raw = bsm_grid(Sg, req.strikes, req.cp, Tg, req.r, req.q, req.sigma)
+    per_opt_raw = bsm_grid(Sg, req.strikes, req.cp, Tg, req.r, req.q, req.sigma, req.jump_pct)
 
     # 3) scaled per-option + portfolio
     per_opt_scaled, portfolio_scaled = scale_surfaces(per_opt_raw, req.qty, Sg, contract_size=req.contract_size)
