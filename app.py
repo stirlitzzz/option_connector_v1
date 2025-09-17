@@ -69,14 +69,27 @@ mcp = FastMCP(
 # Initialize FastAPI with a lifespan that starts FastMCP's session manager
 from contextlib import asynccontextmanager
 
+mcp_app = mcp.streamable_http_app()
+
+mcp_app.router.redirect_slashes = False
+"""
 @asynccontextmanager
 async def lifespan(app):
     # Ensure the Streamable HTTP manager task group is running
     async with mcp.session_manager.run():
         yield
-mcp_app = mcp.streamable_http_app()
-mcp_app.router.redirect_slashes = False
 
+"""
+@asynccontextmanager
+async def mcp_lifespan(app):
+    # Start the transport's stream manager FIRST, then the session manager.
+    async with mcp.streamable_http_manager.run():
+        async with mcp.session_manager.run():
+            yield
+
+
+
+mcp_app.router.lifespan_context = mcp_lifespan
 #@app.get("/", include_in_schema=False)
 #def home():
 #    return {
@@ -84,6 +97,7 @@ mcp_app.router.redirect_slashes = False
 #        "docs": "/docs",
 #        "openapi": "/openapi.json"
 #    }
+
 
 #@app.get("/mcp", include_in_schema=False)
 #def mcp_noslash():
@@ -998,6 +1012,7 @@ def export_option_grid_xlsx(req: ExportGridReq):
         #"download_url": f"http://127.0.0.1:8000/files/{fn.name}"
     }
 
+"""
 @mcp.tool()
 def export_option_grid_csv_mcp(
     spot: float,
@@ -1017,10 +1032,10 @@ def export_option_grid_csv_mcp(
     include_per_option: bool = False,
     field: str = "price"           # e.g. "price","delta_shares","theta_per_day","vega_per_volpt"
 ) -> dict:
-    """
-    Thin wrapper: validate with ExportGridReq and delegate to the FastAPI handler
-    so the logic lives in one place (export_option_grid_csv).
-    """
+    
+    #Thin wrapper: validate with ExportGridReq and delegate to the FastAPI handler
+    #so the logic lives in one place (export_option_grid_csv).
+    
     # Normalize to match the API’s default unless caller overrides
     axes_mode = axes_mode if axes_mode is not None else "pct"
 
@@ -1045,3 +1060,4 @@ def export_option_grid_csv_mcp(
         return detail
     except Exception as e:
         return {"error": str(e)}
+"""

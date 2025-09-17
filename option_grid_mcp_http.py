@@ -492,6 +492,7 @@ def export_option_grid_xlsx_all(
     }
 
 
+
 # -----------------------------------------------------------------------------
 # Build the ASGI app straight from FastMCP (it’s a Starlette app already)
 # IMPORTANT: In this “SDK flavor”, we do NOT try to start managers ourselves.
