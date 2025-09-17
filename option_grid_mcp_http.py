@@ -493,15 +493,16 @@ def export_option_grid_xlsx_all(
     }
 
 
-# 1) Make the MCP server’s HTTP path be its own root
-mcp.settings.streamable_http_path = "/"   # <-- key line
 
-# 2) Build the MCP sub-app and disable slash redirects inside it
-mcp_app = mcp.streamable_http_app()
-mcp_app.router.redirect_slashes = False   # accept / and // variations, no 307s
+# put the transport on /mcp
+mcp.settings.streamable_http_path = "/mcp/"
+app = mcp.streamable_http_app()
 
-# 3) Parent app, mount at /mcp so both /mcp and /mcp/ hit mcp_app
-app = Starlette()
+# do NOT auto-redirect /mcp <-> /mcp/
+app.router.redirect_slashes = False
+
+
+# CORS for ChatGPT
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://chat.openai.com","https://chatgpt.com"],
@@ -509,7 +510,8 @@ app.add_middleware(
     allow_headers=["content-type","mcp-protocol-version","mcp-session-id"],
     expose_headers=["mcp-session-id"],
 )
-app.mount("/mcp", mcp_app)                       # <-- both /mcp and /mcp/ work now
+
+# keep your files mount
 app.mount("/files", StaticFiles(directory=str(EXPORT_DIR)), name="files")
 """
 # -----------------------------------------------------------------------------
