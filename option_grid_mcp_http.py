@@ -46,6 +46,7 @@ mcp = FastMCP(
     streamable_http_path="/mcp",
 )
 
+
 @mcp.tool()
 def option_grid_mcp(
     spot: float,
@@ -492,7 +493,25 @@ def export_option_grid_xlsx_all(
     }
 
 
+# 1) Make the MCP server’s HTTP path be its own root
+mcp.settings.streamable_http_path = "/"   # <-- key line
 
+# 2) Build the MCP sub-app and disable slash redirects inside it
+mcp_app = mcp.streamable_http_app()
+mcp_app.router.redirect_slashes = False   # accept / and // variations, no 307s
+
+# 3) Parent app, mount at /mcp so both /mcp and /mcp/ hit mcp_app
+app = Starlette()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://chat.openai.com","https://chatgpt.com"],
+    allow_methods=["GET","POST","OPTIONS"],
+    allow_headers=["content-type","mcp-protocol-version","mcp-session-id"],
+    expose_headers=["mcp-session-id"],
+)
+app.mount("/mcp", mcp_app)                       # <-- both /mcp and /mcp/ work now
+app.mount("/files", StaticFiles(directory=str(EXPORT_DIR)), name="files")
+"""
 # -----------------------------------------------------------------------------
 # Build the ASGI app straight from FastMCP (it’s a Starlette app already)
 # IMPORTANT: In this “SDK flavor”, we do NOT try to start managers ourselves.
@@ -513,7 +532,7 @@ app.add_middleware(
 
 # static file hosting for downloads
 app.mount("/files", StaticFiles(directory=str(EXPORT_DIR)), name="files")
-
+"""
 # tiny health
 @app.route("/")
 async def _health(_):
